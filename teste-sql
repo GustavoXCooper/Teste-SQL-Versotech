@@ -1,0 +1,110 @@
+-- Lista de funcionários ordenando pelo salário decrescente
+  SELECT id_vendedor,
+         nome,
+         salario
+    FROM VENDEDORES
+   WHERE inativo = '0' 
+ORDER BY salario DESC;
+
+-------------------------------------------------------------------------
+--Lista de pedidos de vendas ordenado por data de emissão
+  SELECT id_pedido,
+         valor_total,
+         data_emissao
+    FROM PEDIDO
+   WHERE situacao = 'PEDIDO'
+     AND data_emissao >= CURRENT_DATE - 30
+ORDER BY data_emissao DESC; 
+-- Achei que faz mais sentido ordernar decrescente, do mais recente para o mais antigo. Também limitei para 30 dias atrás, assim a consulta não fica tão grande. 
+
+-------------------------------------------------------------------------
+--Valor de faturamento por cliente
+  SELECT CLIENTES.id_cliente, 
+         CLIENTES.razao_social,
+         sum(PEDIDO.valor_total)   as faturamento_cliente   
+    FROM CLIENTES
+    JOIN PEDIDO
+      ON PEDIDO.id_cliente = CLIENTES.id_cliente
+   WHERE CLIENTES.inativo = '0'
+     AND PEDIDO.data_emissao >= CURRENT_DATE - 30
+GROUP BY CLIENTES.id_cliente,
+         CLIENTES.razao_social
+ORDER BY faturamento_cliente DESC;
+-- Assumindo que inativo = '1' quer dizer que ele está inativo e inativo = '0' quer dizer que ele não está inativo. Segue a mesma lógica pra as outras.
+
+-------------------------------------------------------------------------
+-- Valor de faturamento por empresa
+  SELECT EMPRESA.id_empresa, 
+         EMPRESA.razao_social,
+         sum(pedido.valor_total)   as faturamento_empresa
+    FROM EMPRESA
+    JOIN PEDIDO
+      ON PEDIDO.id_empresa = EMPRESA.id_empresa
+   WHERE EMPRESA.inativo = '0'
+     AND PEDIDO.data_emissao >= CURRENT_DATE - 30
+GROUP BY EMPRESA.id_empresa,
+         EMPRESA.razao_social
+ORDER BY faturamento_empresa DESC;
+
+-------------------------------------------------------------------------
+--Valor de faturamento por vendedor
+  SELECT VENDEDORES.id_vendedor,
+         VENDEDORES.nome,
+         SUM(PEDIDO.valor_total)  as faturamento_vendedor
+    FROM PEDIDO
+    JOIN CLIENTES
+      ON CLIENTES.id_cliente = PEDIDO.id_cliente
+    JOIN VENDEDORES
+      ON VENDEDORES.id_vendedor = CLIENTES.id_vendedor
+   WHERE PEDIDO.data_emissao >= CURRENT_DATE - 30
+GROUP BY VENDEDORES.id_vendedor,
+         VENDEDORES.nome
+ORDER BY faturamento_vendedor DESC;
+-- A PEDIDO não tem id_vendedor, mas tem id_cliente. Assumi, então, que um cliente sempre compra do mesmo vendedor e por isso usei a tabela de CLIENTES. Não filtrei por VENDEDOR.inativo pois já tem filtro de últimos 30 dias e, dado isso, mesmo que ele tenha sido inativado, a informação do quanto vendeu pode ser relevante.
+
+-------------------------------------------------------------------------
+-- Consultas de Junção
+
+    SELECT ITENS_PEDIDO.id_produto            as id_produto,
+           PRODUTOS.descricao                 as descricao_produto,
+           CLIENTES.id_cliente                as id_cliente,
+           CLIENTES.razao_social              as razao_social_cliente,
+           EMPRESA.id_empresa                 as id_empresa,
+           EMPRESA.razao_social               as razao_social_empresa,
+           VENDEDORES.id_vendedor             as id_vendedor,
+           VENDEDORES.nome                    as nome_vendedor,
+           CONFIG_PRECO_PRODUTO.preco_minimo  as preco_minimo_produto,
+           CONFIG_PRECO_PRODUTO.preco_maximo  as preco_maximo_produto,
+           CASE WHEN ITENS_PEDIDO.preco_praticado <= CONFIG_PRECO_PRODUTO.preco_minimo
+                THEN CONFIG_PRECO_PRODUTO.preco_minimo
+            -- Quando o preço que o produto foi vendido for menor que o preço mínimo, então preço base é o valor mínimo
+            WHEN ITENS_PEDIDO.preco_praticado >= CONFIG_PRECO_PRODUTO.preco_maximo
+                 THEN CONFIG_PRECO_PRODUTO.preco_maximo
+            -- Quando o preço que o produto foi vendido for maior que o preço maximo, então preço base é o valor máximo
+            ELSE ITENS_PEDIDO.preco_praticado
+            -- Se não, preço base é o preço de venda
+        END                                                                      AS preco_base
+      FROM (SELECT MAX(PEDIDO.data_emissao) AS data_ultimo_pedido
+              FROM PEDIDO
+             WHERE PEDIDO.situacao = 'PEDIDO'
+          GROUP BY PEDIDO.id_cliente) AS ULTIMO_PEDIDO
+          -- Esse FROM foi a única forma que achei de conseguir o último pedido
+      JOIN PEDIDO
+        ON PEDIDO.data_emissao = ULTIMO_PEDIDO.data_ultimo_pedido
+      JOIN ITENS_PEDIDO 
+        ON ITENS_PEDIDO.id_pedido = PEDIDO.id_pedido
+      JOIN PRODUTOS
+        ON PRODUTOS.id_produto = ITENS_PEDIDO.id_produto
+      JOIN CLIENTES
+        ON CLIENTES.id_cliente = PEDIDO.id_cliente
+      JOIN VENDEDORES 
+        ON VENDEDORES.id_vendedor = CLIENTES.id_vendedor  
+      JOIN EMPRESA
+        ON EMPRESA.id_empresa = PEDIDO.id_empresa
+     LEFT JOIN CONFIG_PRECO_PRODUTO 
+        ON CONFIG_PRECO_PRODUTO.id_produto = PRODUTOS.id_produto
+       AND CONFIG_PRECO_PRODUTO.id_empresa = PEDIDO.id_empresa
+       AND CONFIG_PRECO_PRODUTO.id_vendedor = VENDEDORES.id_vendedor
+-- Não sei se era necessário filtrar por vendedor também, mas como a tabela tem ache que seria o ideal.
+  
+
